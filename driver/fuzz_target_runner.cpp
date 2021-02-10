@@ -52,6 +52,9 @@ DEFINE_string(reproducer_path, ".",
               "Path at which fuzzing reproducers are stored. Defaults to the "
               "current directory.");
 
+constexpr auto kFuzzTargetFinderClass =
+    "com/code_intelligence/jazzer/runtime/FuzzTargetFinder";
+
 namespace jazzer {
 // split a string on unescaped spaces
 std::vector<std::string> splitOnSpace(const std::string &s) {
@@ -78,7 +81,11 @@ FuzzTargetRunner::FuzzTargetRunner(
     JVM &jvm, const std::vector<std::string> &additional_target_args)
     : ExceptionPrinter(jvm), jvm_(jvm), ignore_tokens_() {
   auto &env = jvm.GetEnv();
-  // the first positional argument should be the fuzz target class
+  if (FLAGS_target_class.empty()) {
+    FLAGS_target_class = DetectFuzzTargetClass();
+  }
+  // If automatically detecting the fuzz target class failed, we expect it as
+  // the first positional argument.
   if (FLAGS_target_class.empty()) {
     std::cerr << "Missing argument --target_class <fuzz_target_class>"
               << std::endl;
@@ -252,5 +259,23 @@ void FuzzTargetRunner::DumpReproducer(const uint8_t *data, std::size_t size) {
                    "reproducer_path='%s'; Java reproducer written to %s",
                    FLAGS_reproducer_path, reproducer_full_path)
             << std::endl;
+}
+
+std::string FuzzTargetRunner::DetectFuzzTargetClass() const {
+  jclass fuzz_target_finder = jvm_.FindClass(kFuzzTargetFinderClass);
+  jmethodID detect_fuzz_target_class =
+      jvm_.GetStaticMethodID(fuzz_target_finder, "detectFuzzTargetClass",
+                             "()Ljava/lang/String;", true);
+  auto &env = jvm_.GetEnv();
+  auto jni_fuzz_target_class = (jstring)(
+      env.CallStaticObjectMethod(fuzz_target_finder, detect_fuzz_target_class));
+  if (jni_fuzz_target_class == nullptr) return "";
+
+  const char *fuzz_target_class_cstr =
+      env.GetStringUTFChars(jni_fuzz_target_class, nullptr);
+  std::string fuzz_target_class = std::string(fuzz_target_class_cstr);
+  env.ReleaseStringUTFChars(jni_fuzz_target_class, fuzz_target_class_cstr);
+
+  return fuzz_target_class;
 }
 }  // namespace jazzer

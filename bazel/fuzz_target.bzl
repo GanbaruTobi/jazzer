@@ -27,6 +27,7 @@ def java_fuzz_target_test(
         name = target_name,
         visibility = ["//visibility:private"],
         create_executable = False,
+        deploy_manifest_lines = ["Fuzz-Target-Class: %s" % target_class],
         **kwargs
     )
 
@@ -50,7 +51,6 @@ def java_fuzz_target_test(
         args = [
             "$(rootpath %s)" % driver,
             "--cp=$(rootpath :%s_deploy.jar)" % target_name,
-            "--target_class=" + target_class,
             "--agent_path=$(rootpath //agent:jazzer_agent_deploy.jar)",
             # Should be bigger than the JVM max heap size (4096m)
             "-rss_limit_mb=5000",
